@@ -18,7 +18,7 @@ static ngx_int_t parsebuf_reset_readbuf(ipc_readbuf_t *rbuf);
 ngx_int_t ipc_init(ipc_t *ipc) {
   int                             i = 0;
   ipc_process_t                  *proc;
-  
+
   for(i=0; i< NGX_MAX_PROCESSES; i++) {
     proc = &ipc->process[i];
     proc->ipc = ipc;
@@ -52,14 +52,14 @@ ngx_int_t ipc_open(ipc_t *ipc, ngx_cycle_t *cycle, ngx_int_t workers, void (*slo
   ngx_int_t                       last_expected_process = ngx_last_process;
   ipc_process_t                  *proc;
   ngx_socket_t                   *socks;
-  
-  /* here's the deal: we have no control over fork()ing, nginx's internal 
-    * socketpairs are unusable for our purposes (as of nginx 0.8 -- check the 
+
+  /* here's the deal: we have no control over fork()ing, nginx's internal
+    * socketpairs are unusable for our purposes (as of nginx 0.8 -- check the
     * code to see why), and the module initialization callbacks occur before
-    * any workers are spawned. Rather than futzing around with existing 
-    * socketpairs, we make our own pipes array. 
-    * Trouble is, ngx_spawn_process() creates them one-by-one, and we need to 
-    * do it all at once. So we must guess all the workers' ngx_process_slots in 
+    * any workers are spawned. Rather than futzing around with existing
+    * socketpairs, we make our own pipes array.
+    * Trouble is, ngx_spawn_process() creates them one-by-one, and we need to
+    * do it all at once. So we must guess all the workers' ngx_process_slots in
     * advance. Meaning the spawning logic must be copied to the T.
     * ... with some allowances for already-opened sockets...
     */
@@ -69,15 +69,15 @@ ngx_int_t ipc_open(ipc_t *ipc, ngx_cycle_t *cycle, ngx_int_t workers, void (*slo
       //find empty existing slot
       s++;
     }
-    
+
     if(slot_callback) {
       slot_callback(s, i);
     }
-    
+
     proc = &ipc->process[s];
 
     socks = proc->pipe;
-    
+
     if(proc->active) {
       // reinitialize already active pipes. This is done to prevent IPC alerts
       // from a previous restart that were never read from being received by
@@ -86,9 +86,9 @@ ngx_int_t ipc_open(ipc_t *ipc, ngx_cycle_t *cycle, ngx_int_t workers, void (*slo
       ipc_try_close_fd(&socks[1]);
       proc->active = 0;
     }
-    
+
     assert(socks[0] == NGX_INVALID_FILE && socks[1] == NGX_INVALID_FILE);
-    
+
     //make-a-pipe
     if (pipe(socks) == -1) {
       ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno, "pipe() failed while initializing nchan IPC");
@@ -105,12 +105,12 @@ ngx_int_t ipc_open(ipc_t *ipc, ngx_cycle_t *cycle, ngx_int_t workers, void (*slo
     }
     //It's ALIIIIIVE! ... erm.. active...
     proc->active = 1;
-    
+
     s++; //NEXT!!
   }
-  
+
   //ERR("ipc_alert_t size %i bytes", sizeof(ipc_alert_t));
-  
+
   return NGX_OK;
 }
 
@@ -120,26 +120,26 @@ ngx_int_t ipc_close(ipc_t *ipc, ngx_cycle_t *cycle) {
   int i;
   ipc_process_t            *proc;
   ipc_alert_link_t         *cur, *cur_next;
-  
+
   for (i=0; i<NGX_MAX_PROCESSES; i++) {
     proc = &ipc->process[i];
     if(!proc->active) continue;
-    
+
     if(proc->c) {
       ngx_close_connection(proc->c);
       proc->c = NULL;
     }
-    
+
     for(cur = proc->wbuf.head; cur != NULL; cur = cur_next) {
       cur_next = cur->next;
       ipc_free_buffered_alert(cur);
     }
-    
+
     if(proc->rbuf.buf) {
       free(proc->rbuf.buf);
       ngx_memzero(&proc->rbuf, sizeof(proc->rbuf));
     }
-    
+
     ipc_try_close_fd(&proc->pipe[0]);
     ipc_try_close_fd(&proc->pipe[1]);
     ipc->process[i].active = 0;
@@ -153,10 +153,10 @@ static ngx_int_t ipc_write_buffered_alert(ngx_socket_t fd, ipc_alert_link_t *ale
   ngx_int_t    err;
   uint16_t     unsent;
   u_char      *data;
- 
+
   unsent = alert->buf.len - alert->sent;
   data = &alert->buf.data[alert->sent];
-  
+
   n = write(fd, data, unsent);
   if (n == -1) {
     err = ngx_errno;
@@ -164,7 +164,7 @@ static ngx_int_t ipc_write_buffered_alert(ngx_socket_t fd, ipc_alert_link_t *ale
       //ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, err, "write() EAGAINED...");
       return NGX_AGAIN;
     }
-    
+
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, err, "write() failed");
     assert(0);
     return NGX_ERROR;
@@ -173,7 +173,7 @@ static ngx_int_t ipc_write_buffered_alert(ngx_socket_t fd, ipc_alert_link_t *ale
     alert->sent += n;
     return NGX_AGAIN;
   }
-  
+
   return NGX_OK;
 }
 
@@ -186,17 +186,17 @@ static ngx_int_t ipc_free_buffered_alert(ipc_alert_link_t *alert_link) {
 static void ipc_write_handler(ngx_event_t *ev) {
   ngx_connection_t        *c = ev->data;
   ngx_socket_t             fd = c->fd;
-  
+
   ipc_process_t           *proc = (ipc_process_t *) c->data;
   ipc_alert_link_t        *cur;
-  
+
   ngx_int_t                rc;
-  
+
   uint8_t                  write_aborted = 0;
-  
+
   while((cur = proc->wbuf.head) != NULL) {
     rc = ipc_write_buffered_alert(fd, cur);
-    
+
     if(rc == NGX_EAGAIN) {
       write_aborted = 1;
       break;
@@ -207,7 +207,7 @@ static void ipc_write_handler(ngx_event_t *ev) {
         proc->wbuf.tail = NULL;
       }
       ipc_free_buffered_alert(cur);
-      
+
     }
     else {
       //we got other problems
@@ -215,7 +215,7 @@ static void ipc_write_handler(ngx_event_t *ev) {
       break;
     }
   }
-  
+
   if(write_aborted) {
     //DBG("re-add event because the write failed");
     ngx_handle_write_event(c->write, 0);
@@ -227,41 +227,41 @@ static void ipc_write_handler(ngx_event_t *ev) {
 }
 
 ngx_int_t ipc_register_worker(ipc_t *ipc, ngx_cycle_t *cycle) {
-  int                    i;    
+  int                    i;
   ngx_connection_t      *c;
   ipc_process_t         *proc;
-  
+
   for(i=0; i< NGX_MAX_PROCESSES; i++) {
-    
+
     proc = &ipc->process[i];
-    
+
     if(!proc->active) continue;
-    
+
     assert(proc->pipe[0] != NGX_INVALID_FILE);
     assert(proc->pipe[1] != NGX_INVALID_FILE);
-    
+
     if(i==ngx_process_slot) {
       //set up read connection
       c = ngx_get_connection(proc->pipe[0], cycle->log);
       c->data = ipc;
-      
+
       c->read->handler = ipc_read_handler;
       c->read->log = cycle->log;
       c->write->handler = NULL;
-      
+
       ngx_add_event(c->read, NGX_READ_EVENT, 0);
       proc->c=c;
     }
     else {
       //set up write connection
       c = ngx_get_connection(proc->pipe[1], cycle->log);
-      
+
       c->data = proc;
-      
+
       c->read->handler = NULL;
       c->write->log = cycle->log;
       c->write->handler = ipc_write_handler;
-      
+
       proc->c=c;
     }
   }
@@ -283,17 +283,17 @@ static void alloc_buf_copy(ipc_readbuf_t *rbuf, size_t size) {
   if(oldsz > 0) {
     memcpy(rbuf->cur, cur, oldsz);
   }
-  rbuf->last = rbuf->cur + oldsz;  
+  rbuf->last = rbuf->cur + oldsz;
   free(oldbuf);
 }
 
 static ngx_int_t parsebuf_reset_readbuf(ipc_readbuf_t *rbuf) {
-  
+
   ngx_memzero(&rbuf->header, sizeof(rbuf->header));
   ngx_memzero(&rbuf->body, sizeof(rbuf->body));
-  
+
   rbuf->complete = 0;
-  
+
   if(rbuf->buf) {
     if(rbuf->last == rbuf->cur) {
       if(rbuf->buf_last - rbuf->buf > IPC_MAX_READBUF_LEN) {
@@ -325,15 +325,15 @@ static ngx_int_t parsebuf_reset_readbuf(ipc_readbuf_t *rbuf) {
     rbuf->read_next_bytes = IPC_MAX_READBUF_LEN;
     alloc_buf(rbuf, IPC_MAX_READBUF_LEN);
   }
-  
+
   return NGX_OK;
 }
 
 static ngx_int_t parsebuf_need_data(ipc_readbuf_t *rbuf) {
   assert(rbuf->header.complete);
-  
+
   size_t sz = rbuf->last - rbuf->cur, freesz = rbuf->last - rbuf->buf_last;
-  
+
   if(rbuf->body.len <= sz){
     //we already have the alert data
     rbuf->read_next_bytes = 0;
@@ -356,7 +356,7 @@ static ngx_int_t parsebuf(ipc_t *ipc, ipc_readbuf_t *rbuf) {
   char *cur = rbuf->cur;
   char *last = rbuf->last;
   size_t used;
-  
+
   if(!rbuf->header.complete) {
     cur = (char *)ngx_strlchr((u_char *)cur, (u_char *)last, '|');
     if(!cur) {
@@ -384,25 +384,25 @@ static ngx_int_t parsebuf(ipc_t *ipc, ipc_readbuf_t *rbuf) {
       }
       *cur='|'; //change it back for debugging
       rbuf->header.separators_seen ++;
-      
+
       used = (cur+1) - rbuf->cur;
       rbuf->cur += used;
-      
+
       return NGX_AGAIN;
     }
   }
   else {
     if((ssize_t )rbuf->body.len <= rbuf->last - rbuf->cur) {
       ngx_str_t name, data;
-      
+
       rbuf->body.data = (u_char *)cur;
-      
+
       name.data = rbuf->body.data;
       name.len = rbuf->header.name_len;
-      
+
       data.data = name.data + name.len;
       data.len = rbuf->body.len - name.len;
-      
+
       ipc->handler(rbuf->header.src_slot, &name, &data);
       rbuf->cur += rbuf->body.len;
       return parsebuf_reset_readbuf(rbuf);
@@ -419,12 +419,14 @@ static ngx_int_t ipc_read(ipc_process_t *ipc_proc, ipc_readbuf_t *rbuf, ngx_log_
   ngx_err_t           err;
   ngx_int_t           rc;
   ngx_socket_t        s = ipc_proc->c->fd;
-  
-  DBG("IPC read at most %i bytes", rbuf->read_next_bytes);
-  
+
+
   while(rbuf->read_next_bytes > 0) {
-    assert(rbuf->buf_last - rbuf->last >= (ssize_t )rbuf->read_next_bytes);
-    
+    if (rbuf->buf_last - rbuf->last < (ssize_t )rbuf->read_next_bytes){
+      ERR("IPC read at most %i bytes", rbuf->read_next_bytes);
+      assert(0);
+    }
+
     n = read(s, rbuf->last, rbuf->read_next_bytes);
     DBG("...actually read %i", n);
     if (n == -1) {
@@ -432,10 +434,10 @@ static ngx_int_t ipc_read(ipc_process_t *ipc_proc, ipc_readbuf_t *rbuf, ngx_log_
       if (err == NGX_EAGAIN) {
         return NGX_AGAIN;
       }
-      
+
       ngx_log_error(NGX_LOG_ERR, log, err, "nchan IPC: read() failed");
       return NGX_ERROR;
-    } 
+    }
     else if (n == 0) {
       ngx_log_debug0(NGX_LOG_ERR, log, 0, "nchan IPC: read() returned zero");
       return NGX_ERROR;
@@ -447,7 +449,7 @@ static ngx_int_t ipc_read(ipc_process_t *ipc_proc, ipc_readbuf_t *rbuf, ngx_log_
       } while(rc == NGX_AGAIN);
     }
   }
-  
+
   return NGX_OK;
 }
 
@@ -457,14 +459,14 @@ static void ipc_read_handler(ngx_event_t *ev) {
   ngx_int_t          rc;
   ngx_connection_t  *c;
   ipc_process_t     *ipc_proc;
-  
+
   if (ev->timedout) {
     ev->timedout = 0;
     return;
   }
   c = ev->data;
   ipc_proc = &((ipc_t *)c->data)->process[ngx_process_slot];
-  
+
   rc = ipc_read(ipc_proc, &ipc_proc->rbuf, ev->log);
   if (rc == NGX_ERROR) {
     ERR("IPC_READ_SOCKET failed: bad connection. This should never have happened, yet here we are...");
@@ -476,19 +478,19 @@ static void ipc_read_handler(ngx_event_t *ev) {
   }
 }
 
-  
+
 // This is what an alert string looks like:
 // <SRC_SLOT(uint16)>|<NAME&DATA_LEN(uint32)>|<NAME_LEN(uint16)>|<NAME><DATA>
 
 
 ngx_int_t ipc_alert(ipc_t *ipc, ngx_int_t slot, ngx_str_t *name, ngx_str_t *data) {
-  
+
   ipc_alert_link_t   *alert;
   ipc_process_t      *proc = &ipc->process[slot];
   ipc_writebuf_t     *wb = &proc->wbuf;
   size_t              alert_str_size = 0;
   u_char             *end;
-  
+
   ngx_str_t           empty = {0, NULL};
   if(!name) {
     name = &empty;
@@ -496,14 +498,14 @@ ngx_int_t ipc_alert(ipc_t *ipc, ngx_int_t slot, ngx_str_t *name, ngx_str_t *data
   if(!data) {
     data = &empty;
   }
-  
+
   DBG("IPC send alert '%V' (data:'%V') to slot %i", name, data, slot);
-  
+
   if(slot == ngx_process_slot) {
     ipc->handler(slot, name, data);
     return NGX_OK;
   }
-  
+
   if(!proc->active) {
     return NGX_ERROR;
   }
@@ -515,13 +517,13 @@ ngx_int_t ipc_alert(ipc_t *ipc, ngx_int_t slot, ngx_str_t *name, ngx_str_t *data
   }
   alert->next = NULL;
   alert->sent = 0;
-  
+
   alert->buf.data = (u_char *)&alert[1];
-  
+
   end = ngx_snprintf(alert->buf.data, alert_str_size, "%i|%i|%i|%V%V", ngx_process_slot, data->len + name->len, name->len, name, data);
-  
+
   alert->buf.len = end - alert->buf.data;
-  
+
   if(wb->tail != NULL) {
     wb->tail->next = alert;
   }
@@ -530,7 +532,7 @@ ngx_int_t ipc_alert(ipc_t *ipc, ngx_int_t slot, ngx_str_t *name, ngx_str_t *data
     wb->head = alert;
   }
   ipc_write_handler(proc->c->write);
-  
+
   //ngx_handle_write_event(ipc->c[slot]->write, 0);
   //ngx_add_event(ipc->c[slot]->write, NGX_WRITE_EVENT, NGX_CLEAR_EVENT);
 
